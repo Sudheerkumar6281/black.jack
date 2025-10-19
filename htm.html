@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Blackjack — Simple Web Game</title>
+  <style>
+    :root{ --bg:#0b1220; --card:#f8fafc; --panel:#111827; --accent:#ef4444; --muted:#94a3b8 }
+    *{box-sizing:border-box}
+    body{font-family:Inter,Segoe UI,Roboto,Arial; background:linear-gradient(180deg,#071126 0%, #0b1b2b 100%); color:var(--card); min-height:100vh; margin:0; display:flex; align-items:center; justify-content:center; padding:32px}
+    .table{width:900px; max-width:95%; background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.05)); border-radius:14px; padding:24px; box-shadow:0 8px 30px rgba(2,6,23,0.6)}
+    h1{margin:0 0 6px 0; font-size:20px}
+    .flex{display:flex; gap:16px; align-items:flex-start}
+    .panel{flex:1; background:rgba(255,255,255,0.02); border-radius:10px; padding:14px}
+    .hand{min-height:120px; display:flex; gap:10px; align-items:center}
+    .card{width:62px; height:86px; border-radius:8px; background:var(--card); color:#111827; display:flex; align-items:center; justify-content:center; font-weight:700; box-shadow:0 6px 18px rgba(2,6,23,0.45)}
+    .controls{display:flex; gap:10px; margin-top:12px}
+    button{cursor:pointer; border:0; padding:10px 14px; border-radius:8px; font-weight:600}
+    .btn-primary{background:#10b981; color:white}
+    .btn-ghost{background:transparent; color:var(--card); border:1px solid rgba(255,255,255,0.06)}
+    .status{margin-top:12px; color:var(--muted)}
+    .score{font-size:14px; margin-top:6px}
+    .center{display:flex; flex-direction:column; align-items:center; justify-content:center}
+    .result{font-weight:800; color:var(--accent); font-size:18px}
+    .small{font-size:13px; color:var(--muted)}
+    .footer{margin-top:12px; display:flex; justify-content:space-between; align-items:center}
+    @media (max-width:700px){ .flex{flex-direction:column} .card{width:48px; height:68px} }
+  </style>
+</head>
+<body>
+  <div class="table">
+    <div class="flex">
+      <div class="panel" style="flex:2">
+        <h1>Blackjack</h1>
+        <div class="small">Your hand</div>
+        <div id="user-hand" class="hand" aria-live="polite"></div>
+        <div class="score">Score: <span id="user-score">0</span></div>
+
+        <div style="height:14px"></div>
+
+        <div class="small">Dealer</div>
+        <div id="dealer-hand" class="hand" aria-live="polite"></div>
+        <div class="score">Score: <span id="dealer-score">0</span></div>
+
+        <div class="controls">
+          <button id="hit" class="btn-primary">Hit</button>
+          <button id="stand" class="btn-ghost">Stand</button>
+          <button id="new-game" class="btn-ghost">New Game</button>
+        </div>
+
+        <div class="status" id="message">Click <strong>New Game</strong> to start.</div>
+      </div>
+
+      <div class="panel center" style="flex:1">
+        <div class="small">Rules</div>
+        <p class="small">- A = 11 or 1 (auto-adjust).<br>- Blackjack (two-card 21) beats other 21s.<br>- Dealer hits until 17 or higher.</p>
+        <div style="height:12px"></div>
+        <div class="result" id="result"></div>
+        <div style="height:8px"></div>
+        <div class="small">Based on your Python logic — converted to JS.</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div class="small">Tip: click Hit or Stand. Dealer will auto-play after you Stand or bust.</div>
+      <div class="small">Enjoy!</div>
+    </div>
+  </div>
+
+  <script>
+    // Deck values match the Python version: A=11, 1 present too (redundant), lots of 10s represent 10/J/Q/K
+    const cardPool = [11,1,2,3,4,5,6,7,8,9,10,10,10,10];
+
+    // UI elements
+    const userHandEl = document.getElementById('user-hand');
+    const dealerHandEl = document.getElementById('dealer-hand');
+    const userScoreEl = document.getElementById('user-score');
+    const dealerScoreEl = document.getElementById('dealer-score');
+    const messageEl = document.getElementById('message');
+    const resultEl = document.getElementById('result');
+    const btnHit = document.getElementById('hit');
+    const btnStand = document.getElementById('stand');
+    const btnNew = document.getElementById('new-game');
+
+    let userCards = [];
+    let dealerCards = [];
+    let gameOver = true;
+
+    function randCard(){
+      return cardPool[Math.floor(Math.random()*cardPool.length)];
+    }
+
+    // Calculate best score for a hand (handles multiple aces)
+    function calcScore(cards){
+      const total = cards.reduce((s,c)=>s+c,0);
+      // blackjack check: two cards totaling 21
+      if(total === 21 && cards.length === 2) return 0; // use 0 for blackjack like Python
+
+      // handle A (11) -> convert to 1 while >21
+      let score = total;
+      let aces = cards.filter(c=>c===11).length;
+      while(score > 21 && aces > 0){
+        score -= 10; // 11 -> 1 reduces by 10
+        aces -= 1;
+      }
+      return score;
+    }
+
+    function cardLabel(v){
+      if(v === 11) return 'A';
+      if(v === 10) return '10';
+      return String(v);
+    }
+
+    function renderHands(showDealerHole=false){
+      userHandEl.innerHTML = '';
+      dealerHandEl.innerHTML = '';
+
+      userCards.forEach(c=>{
+        const d = document.createElement('div'); d.className='card'; d.textContent = cardLabel(c); userHandEl.appendChild(d);
+      });
+
+      dealerCards.forEach((c,i)=>{
+        const d = document.createElement('div'); d.className='card';
+        if(i===1 && !showDealerHole && !gameOver){ // keep second card hidden until round over
+          d.textContent = '?'; d.style.opacity = '0.6';
+        } else {
+          d.textContent = cardLabel(c);
+        }
+        dealerHandEl.appendChild(d);
+      });
+
+      const uScore = calcScore(userCards);
+      const dScore = showDealerHole || gameOver ? calcScore(dealerCards) : calcScore([dealerCards[0]]);
+      userScoreEl.textContent = uScore === 0 ? 'Blackjack!' : uScore;
+      dealerScoreEl.textContent = dScore === 0 ? 'Blackjack!' : dScore;
+    }
+
+    function compare(u_score,c_score){
+      if(u_score > 21) return "Computer wins — you went over";
+      if(c_score === 0) return "Computer wins (Blackjack)";
+      if(u_score === 0) return "You win (Blackjack)";
+      if(u_score === c_score) return "It's a draw";
+      if(c_score > 21) return "Computer went over — you win";
+      if(u_score > c_score) return "You win";
+      return "You lose";
+    }
+
+    function checkEndConditions(){
+      const uScore = calcScore(userCards);
+      const cScore = calcScore(dealerCards);
+
+      if(uScore === 0 || cScore === 0 || uScore > 21){
+        gameOver = true;
+        renderHands(true);
+        const message = compare(uScore, cScore);
+        messageEl.textContent = message;
+        resultEl.textContent = message;
+        return true;
+      }
+      return false;
+    }
+
+    function dealerPlay(){
+      let cScore = calcScore(dealerCards);
+      while(cScore !== 0 && cScore < 17){
+        dealerCards.push(randCard());
+        cScore = calcScore(dealerCards);
+      }
+    }
+
+    function startGame(){
+      userCards = [randCard(), randCard()];
+      dealerCards = [randCard(), randCard()];
+      gameOver = false;
+      messageEl.textContent = "Game in progress... choose Hit or Stand.";
+      resultEl.textContent = '';
+      renderHands(false);
+
+      if(checkEndConditions()){
+        // immediate end (blackjack or bust)
+        disableButtons(true);
+      } else {
+        disableButtons(false);
+      }
+    }
+
+    function disableButtons(disabled){
+      btnHit.disabled = disabled;
+      btnStand.disabled = disabled;
+      if(disabled){ btnHit.classList.add('btn-ghost'); btnHit.classList.remove('btn-primary'); }
+      else{ btnHit.classList.add('btn-primary'); btnHit.classList.remove('btn-ghost'); }
+    }
+
+    btnNew.addEventListener('click', ()=>{
+      startGame();
+    });
+
+    btnHit.addEventListener('click', ()=>{
+      if(gameOver) return;
+      userCards.push(randCard());
+      renderHands(false);
+      if(checkEndConditions()){
+        disableButtons(true);
+      }
+    });
+
+    btnStand.addEventListener('click', ()=>{
+      if(gameOver) return;
+      // dealer plays
+      dealerPlay();
+      gameOver = true;
+      renderHands(true);
+      const uScore = calcScore(userCards);
+      const dScore = calcScore(dealerCards);
+      const message = compare(uScore,dScore);
+      messageEl.textContent = message;
+      resultEl.textContent = message;
+      disableButtons(true);
+    });
+
+    // start with New Game disabled until user clicks
+    disableButtons(true);
+  </script>
+</body>
+</html>
